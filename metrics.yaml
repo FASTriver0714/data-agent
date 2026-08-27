@@ -1,0 +1,158 @@
+version: 1
+
+data_scope:
+  table: events
+  period_start: "2019-10-01 00:00:00"
+  period_end: "2019-10-31 23:59:58"
+  note: >-
+    단일 월 데이터. 월 단위 코호트와 전월 대비 비교는 계산하지 않고 불가 사유를 반환한다.
+
+conventions:
+  session_key: user_session
+  session_note: >-
+    원본 user_session 컬럼을 세션 경계로 그대로 사용한다. 30분 초과 공백을 포함한 세션이
+    0.46% 있으나 재정의 실익이 없다.
+  missing_warning_threshold: 0.10
+  missing_note: >-
+    집계 대상 컬럼의 결측률이 임계치를 넘으면 응답에 실제 수치와 함께 명시한다.
+    현재 해당 컬럼: category_code 32.57%, brand 16.20%
+  price_note: >-
+    price는 이벤트 단위 금액이며 수량 컬럼이 없다. purchase 행 1건 = 상품 1개로 계산한다.
+  filters_placeholder: >-
+    각 SQL의 {filters}에는 기간·세그먼트 조건이 AND 절로 주입된다. 없으면 빈 문자열.
+
+exclusions:
+  bot_users:
+    enabled: false
+    rule: "이벤트 수 521건 이상(상위 1%) user_id"
+    note: >-
+      최대 7,436건 유저가 존재한다. 전환율 분모를 부풀리므로 제외 여부를 검토했으나
+      기준선 왜곡 우려로 기본은 미적용. 활성화 시 모든 지표에 동일하게 적용하고
+      응답에 제외 사실을 명시한다.
+
+metrics:
+
+  purchase_conversion_rate:
+    label: 구매 전환율
+    grain: session
+    unit: ratio
+    numerator: purchase 이벤트가 하나 이상 있는 user_session 수
+    denominator: 전체 user_session 수
+    sql: |
+      SELECT
+        CAST(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN user_session END) AS REAL)
+          / NULLIF(COUNT(DISTINCT user_session), 0) AS purchase_conversion_rate
+      FROM events
+      WHERE 1 = 1 {filters}
+    segmentable_by: [category_code, brand, weekday, hour, price_band]
+    caveats:
+      - 세션 내 복수 구매는 1로 계산한다.
+      - >-
+        category_code나 brand로 세그먼트하면 한 세션이 여러 카테고리를 오갈 수 있어
+        분모가 중복 계산된다. 세그먼트 결과는 세션 기준이 아니라 이벤트 기준임을 명시할 것.
+    missing_sensitive: [category_code, brand]
+
+  cart_to_purchase_rate:
+    label: 장바구니→구매 전환율
+    grain: user_product
+    unit: ratio
+    numerator: 장바구니에 담긴 (user_id, product_id) 중 이후 구매가 발생한 조합 수
+    denominator: 장바구니에 담긴 고유 (user_id, product_id) 조합 수
+    sql: |
+      WITH cart AS (
+        SELECT user_id, product_id, MIN(event_time) AS first_cart
+        FROM events
+        WHERE event_type = 'cart' {filters}
+        GROUP BY user_id, product_id
+      ),
+      buy AS (
+        SELECT user_id, product_id, MIN(event_time) AS first_purchase
+        FROM events
+        WHERE event_type = 'purchase' {filters}
+        GROUP BY user_id, product_id
+      )
+      SELECT
+        CAST(SUM(CASE WHEN b.first_purchase >= c.first_cart THEN 1 ELSE 0 END) AS REAL)
+          / NULLIF(COUNT(*), 0) AS cart_to_purchase_rate
+      FROM cart c
+      LEFT JOIN buy b
+        ON b.user_id = c.user_id AND b.product_id = c.product_id
+    segmentable_by: [category_code, brand, price_band]
+    caveats:
+      - >-
+        분모를 cart 이벤트 총합(124,252)으로 잡지 말 것. 같은 상품 재담기가 중복 계산되고,
+        분자에 장바구니를 거치지 않은 구매가 섞여 86%라는 잘못된 값이 나온다. 실제 값은 37% 수준.
+      - 세션 경계를 두지 않는다. 담기와 구매가 다른 세션인 경우가 전체 구매의 7%다.
+    missing_sensitive: [category_code, brand]
+
+  views_per_session:
+    label: 세션당 평균 조회 수
+    grain: session
+    unit: count
+    numerator: view 이벤트 수
+    denominator: view 이벤트가 하나 이상 있는 user_session 수
+    sql: |
+      SELECT
+        CAST(COUNT(*) AS REAL)
+          / NULLIF(COUNT(DISTINCT user_session), 0) AS views_per_session
+      FROM events
+      WHERE event_type = 'view' {filters}
+    segmentable_by: [category_code, brand, weekday, hour]
+    caveats:
+      - >-
+        분모는 전체 세션이 아니라 조회가 있는 세션이다. 전체 세션 대비로 물으면
+        purchase_conversion_rate와 분모가 달라진다는 점을 명시할 것.
+      - 봇 추정 유저가 상위 구간을 끌어올린다. 중앙값 병기를 권장한다.
+    missing_sensitive: [category_code, brand]
+
+  revenue_per_buyer:
+    label: 구매 유저당 평균 구매 금액
+    grain: user
+    unit: currency
+    numerator: purchase 이벤트의 price 합계
+    denominator: 구매 경험이 있는 고유 user_id 수
+    sql: |
+      SELECT
+        SUM(price) / NULLIF(COUNT(DISTINCT user_id), 0) AS revenue_per_buyer
+      FROM events
+      WHERE event_type = 'purchase' {filters}
+    segmentable_by: [category_code, brand, weekday, price_band]
+    caveats:
+      - 수량 컬럼이 없어 purchase 행 1건을 상품 1개로 계산한다.
+      - 통화 단위가 원본에 명시되어 있지 않다. 절대 금액이 아니라 비교값으로만 사용할 것.
+    missing_sensitive: [category_code, brand]
+
+  repeat_purchase_rate:
+    label: 재구매율
+    grain: user
+    unit: ratio
+    numerator: purchase 이벤트가 2건 이상인 user_id 수
+    denominator: 구매 경험이 있는 고유 user_id 수
+    sql: |
+      WITH buyer AS (
+        SELECT user_id, COUNT(*) AS purchase_count
+        FROM events
+        WHERE event_type = 'purchase' {filters}
+        GROUP BY user_id
+      )
+      SELECT
+        CAST(SUM(CASE WHEN purchase_count >= 2 THEN 1 ELSE 0 END) AS REAL)
+          / NULLIF(COUNT(*), 0) AS repeat_purchase_rate
+      FROM buyer
+    segmentable_by: [category_code, brand]
+    caveats:
+      - >-
+        관측 기간이 31일이므로 재구매 주기가 한 달을 넘는 상품군은 구조적으로 과소 측정된다.
+        업종 벤치마크와 비교하지 말 것.
+      - 같은 세션 내 연속 구매도 2건으로 계산된다.
+    missing_sensitive: [category_code, brand]
+
+not_defined:
+  cart_abandonment_rate:
+    reason: >-
+      구매의 50%가 장바구니를 거치지 않아 이탈률 개념이 절반의 구매에 적용되지 않는다.
+      요청 시 계산하지 않고 cart_to_purchase_rate를 제안한다.
+  funnel_step_dropoff:
+    reason: >-
+      view → cart → purchase 순차 퍼널 전제가 성립하지 않는다. 단계별 이탈률 요청은
+      경로가 두 개임을 설명하고 되묻는다.

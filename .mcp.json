@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dataagent": {
+      "type": "stdio",
+      "command": "/Users/fastriver/venv/main/bin/python",
+      "args": [
+        "/Users/fastriver/Desktop/dataagent/src/server.py"
+      ],
+      "env": {}
+    }
+  }
+}
