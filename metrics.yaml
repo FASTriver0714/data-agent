@@ -31,7 +31,6 @@ exclusions:
       응답에 제외 사실을 명시한다.
 
 metrics:
-
   purchase_conversion_rate:
     label: 구매 전환율
     grain: session
@@ -46,6 +45,12 @@ metrics:
       WHERE 1 = 1 {filters}
     segmentable_by: [category_code, brand, weekday, hour, price_band]
     caveats:
+      - category_code 결측률은 event_type별로 크게 다름
+        (view 33.09 / purchase 24.42 / cart 12.51).
+        전체 기준 32.57%는 view 비중에 좌우된 값이므로
+        특정 event_type을 필터한 계산에는 인용하지 않는다.
+      - category_code가 비어 있는 category_id는 해당 id의 모든 행에서
+        비어 있음. 데이터 내부로 이름 복구 불가.
       - 세션 내 복수 구매는 1로 계산한다.
       - >-
         category_code나 brand로 세그먼트하면 한 세션이 여러 카테고리를 오갈 수 있어
@@ -81,7 +86,11 @@ metrics:
     caveats:
       - >-
         분모를 cart 이벤트 총합(124,252)으로 잡지 말 것. 같은 상품 재담기가 중복 계산되고,
-        분자에 장바구니를 거치지 않은 구매가 섞여 86%라는 잘못된 값이 나온다. 실제 값은 37% 수준.
+        분자에 장바구니를 거치지 않은 구매가 섞여 86.09%라는 잘못된 값이 나온다.
+        위 SQL 정의(user_product 단위, 담기 이후 구매)로는 48.26%.
+      - >-
+        구매 시점 조건을 빼고 구매 이력만으로 세면 52.07%로 올라간다.
+        정의상 담기 이후 구매만 센다.
       - 세션 경계를 두지 않는다. 담기와 구매가 다른 세션인 경우가 전체 구매의 7%다.
     missing_sensitive: [category_code, brand]
 

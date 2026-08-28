@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3 db/weblog.db \"SELECT COUNT\\(*\\) AS row_count FROM events;\")",
+      "mcp__dataagent__get_schema",
+      "mcp__dataagent__run_query",
+      "mcp__dataagent__get_metric"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "dataagent"
+  ]
+}
