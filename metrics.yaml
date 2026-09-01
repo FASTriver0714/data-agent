@@ -1,3 +1,5 @@
+# price_band는 구매 가격 사분위수 기준이라 구간별 구매 건수가 강제로 균등해지며,
+# 전환율 차이는 조회수 분포의 재표현에 불과해 축에서 제외(2026-08 확인)
 version: 1
 
 data_scope:
@@ -43,7 +45,7 @@ metrics:
           / NULLIF(COUNT(DISTINCT user_session), 0) AS purchase_conversion_rate
       FROM events
       WHERE 1 = 1 {filters}
-    segmentable_by: [category_code, brand, weekday, hour, price_band]
+    segmentable_by: [category_code, brand, weekday, hour]
     caveats:
       - category_code 결측률은 event_type별로 크게 다름
         (view 33.09 / purchase 24.42 / cart 12.51).
@@ -55,6 +57,13 @@ metrics:
       - >-
         category_code나 brand로 세그먼트하면 한 세션이 여러 카테고리를 오갈 수 있어
         분모가 중복 계산된다. 세그먼트 결과는 세션 기준이 아니라 이벤트 기준임을 명시할 것.
+      - >-
+        이벤트 단위 view_to_purchase_rate와 분모가 다르다(세션 수 vs view 이벤트 수).
+        두 값을 나란히 비교하거나 하나를 다른 하나의 근거로 쓰지 않는다.
+      - >-
+        brand 빈 값은 대부분 상품 자체에 브랜드가 없는 경우다(상품 단위 확인, 유실 2.7%).
+        결측군을 제외하고 집계하면 결과가 편향된다.
+      - 브랜드 결측군의 전환율 차이는 view_to_purchase_rate 참조.
     missing_sensitive: [category_code, brand]
 
   cart_to_purchase_rate:
@@ -82,7 +91,7 @@ metrics:
       FROM cart c
       LEFT JOIN buy b
         ON b.user_id = c.user_id AND b.product_id = c.product_id
-    segmentable_by: [category_code, brand, price_band]
+    segmentable_by: [category_code, brand]
     caveats:
       - >-
         분모를 cart 이벤트 총합(124,252)으로 잡지 말 것. 같은 상품 재담기가 중복 계산되고,
@@ -92,6 +101,10 @@ metrics:
         구매 시점 조건을 빼고 구매 이력만으로 세면 52.07%로 올라간다.
         정의상 담기 이후 구매만 센다.
       - 세션 경계를 두지 않는다. 담기와 구매가 다른 세션인 경우가 전체 구매의 7%다.
+      - >-
+        brand 빈 값은 대부분 상품 자체에 브랜드가 없는 경우다(상품 단위 확인, 유실 2.7%).
+        결측군을 제외하고 집계하면 결과가 편향된다.
+      - 브랜드 결측군의 전환율 차이는 view_to_purchase_rate 참조.
     missing_sensitive: [category_code, brand]
 
   views_per_session:
@@ -112,6 +125,9 @@ metrics:
         분모는 전체 세션이 아니라 조회가 있는 세션이다. 전체 세션 대비로 물으면
         purchase_conversion_rate와 분모가 달라진다는 점을 명시할 것.
       - 봇 추정 유저가 상위 구간을 끌어올린다. 중앙값 병기를 권장한다.
+      - >-
+        brand 빈 값은 대부분 상품 자체에 브랜드가 없는 경우다(상품 단위 확인, 유실 2.7%).
+        결측군을 제외하고 집계하면 결과가 편향된다.
     missing_sensitive: [category_code, brand]
 
   revenue_per_buyer:
@@ -125,10 +141,13 @@ metrics:
         SUM(price) / NULLIF(COUNT(DISTINCT user_id), 0) AS revenue_per_buyer
       FROM events
       WHERE event_type = 'purchase' {filters}
-    segmentable_by: [category_code, brand, weekday, price_band]
+    segmentable_by: [category_code, brand, weekday]
     caveats:
       - 수량 컬럼이 없어 purchase 행 1건을 상품 1개로 계산한다.
       - 통화 단위가 원본에 명시되어 있지 않다. 절대 금액이 아니라 비교값으로만 사용할 것.
+      - >-
+        brand 빈 값은 대부분 상품 자체에 브랜드가 없는 경우다(상품 단위 확인, 유실 2.7%).
+        결측군을 제외하고 집계하면 결과가 편향된다.
     missing_sensitive: [category_code, brand]
 
   repeat_purchase_rate:
@@ -154,6 +173,36 @@ metrics:
         관측 기간이 31일이므로 재구매 주기가 한 달을 넘는 상품군은 구조적으로 과소 측정된다.
         업종 벤치마크와 비교하지 말 것.
       - 같은 세션 내 연속 구매도 2건으로 계산된다.
+      - >-
+        brand 빈 값은 대부분 상품 자체에 브랜드가 없는 경우다(상품 단위 확인, 유실 2.7%).
+        결측군을 제외하고 집계하면 결과가 편향된다.
+    missing_sensitive: [category_code, brand]
+
+  # 세그먼트 비교(시간대·브랜드 결측 등)에는 이벤트 단위 지표가 필요하나
+  # 세션 기준 지표에 시간을 귀속시키는 규칙은 임의성이 커 별도 지표로 분리(2026-08)
+  view_to_purchase_rate:
+    label: 조회 이벤트 대비 구매 이벤트 비율 (이벤트 단위)
+    grain: event
+    unit: ratio
+    numerator: purchase 이벤트 수
+    denominator: view 이벤트 수
+    sql: |
+      SELECT
+        CAST(SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) AS REAL)
+          / NULLIF(SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END), 0)
+          AS view_to_purchase_rate
+      FROM events
+      WHERE 1 = 1 {filters}
+    segmentable_by: [hour, weekday, brand, category_code]
+    caveats:
+      - >-
+        세션 기준 purchase_conversion_rate와 분모가 다르다.
+        두 값을 나란히 비교하거나 하나를 다른 하나의 근거로 쓰지 않는다.
+        세그먼트 간 상대 비교에는 유효하나 절대 수준의 좋고 나쁨은 판단할 수 없다.
+      - >-
+        brand 빈 값은 대부분 상품 자체에 브랜드가 없는 경우다(상품 단위 확인, 유실 2.7%).
+        결측군을 제외하고 집계하면 결과가 편향된다.
+      - 결측군 전환율은 브랜드 보유군의 약 절반이다(0.96% vs 1.82%).
     missing_sensitive: [category_code, brand]
 
 not_defined:

@@ -4,18 +4,25 @@ scoring:
   auto_scored: 18 # 1~16, 19, 20
   rubric_scored: 2 # 17, 18
   target: "자동 채점 18문항 중 17문항 이상 (90%)"
-  scalar_tolerance: 1.0e-6 # 비율·금액은 상대오차
-  count_tolerance: 0 # 건수는 완전 일치
-  table_compare: >-
-    다중 행 결과는 정렬 후 (키, 값) 튜플 리스트로 비교한다. 컬럼명은 채점 대상이 아니다.
+  tolerance_by_type:
+    count: 0
+    ratio: 0.001
+    amount: 0.001
+  table:
+    row_count: exact
+    key_columns: exact
+    numeric_columns: {integer: 0, float: 0.001}
+    order_sensitive: true
+  table_compare: 컬럼명은 채점 대상이 아니다.
   refusal_scoring: >-
     expect_refusal 문항은 숫자를 반환하면 실패. 계산을 시도하지 않고 불가 사유를 밝혀야 통과.
 
 conventions:
   missing_filter: "brand IS NOT NULL AND brand <> ''"
   segment_grain_note: >-
-    전환율 세그먼트 기준이 문항마다 다르다. 요일은 세션의 속성이므로 세션 단위로 계산하고,
-    brand·price는 상품의 속성이므로 이벤트 단위(view 대비 purchase)로 계산한다.
+    세그먼트 축이 세션의 속성이면(요일, 시간) 세션 단위 지표를, 상품의 속성이면
+    (브랜드, 카테고리) 이벤트 단위 지표를 쓴다. 한 세션에 여러 상품이 섞이므로
+    상품 속성은 세션에 귀속시킬 수 없다.
     이벤트 단위 값은 metrics.yaml의 세션 기준 전환율과 다른 수치이므로 응답에 기준을 명시해야 한다.
 
 questions:
@@ -26,6 +33,8 @@ questions:
     question: 10월 전체 이벤트 건수는?
     gold_sql: "SELECT COUNT(*) AS n FROM events"
     gold_value: 6610750
+    value_type: count
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q02
@@ -35,11 +44,13 @@ questions:
       SELECT event_type, COUNT(*) AS n
       FROM events
       GROUP BY event_type
-      ORDER BY n DESC
+      ORDER BY n DESC, event_type
     gold_value:
       - [view, 6379532]
       - [cart, 124252]
       - [purchase, 106966]
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q03
@@ -49,8 +60,10 @@ questions:
       SELECT SUM(price) AS revenue
       FROM events
       WHERE event_type = 'purchase'
-    gold_value: null
+    gold_value: 33297237.63
     note: 수량 컬럼이 없어 purchase 행 1건 = 상품 1개로 계산한다.
+    value_type: amount
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q04
@@ -60,7 +73,9 @@ questions:
       SELECT AVG(price) AS avg_price
       FROM events
       WHERE event_type = 'purchase'
-    gold_value: null
+    gold_value: 311.28805068900397
+    value_type: amount
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q05
@@ -72,10 +87,22 @@ questions:
       WHERE event_type = 'purchase'
         AND brand IS NOT NULL AND brand <> ''
       GROUP BY brand
-      ORDER BY n DESC
+      ORDER BY n DESC, brand
       LIMIT 10
-    gold_value: null
+    gold_value:
+      - ["samsung", 21953]
+      - ["apple", 19048]
+      - ["xiaomi", 8098]
+      - ["huawei", 3053]
+      - ["lucente", 1887]
+      - ["lg", 1506]
+      - ["oppo", 1412]
+      - ["acer", 1189]
+      - ["sony", 1099]
+      - ["bosch", 1032]
     note: brand 결측 16.2%를 제외한 결과임을 응답에 명시해야 한다.
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q06
@@ -86,9 +113,21 @@ questions:
       FROM events
       WHERE event_type = 'view'
       GROUP BY product_id
-      ORDER BY n DESC
+      ORDER BY n DESC, product_id
       LIMIT 10
-    gold_value: null
+    gold_value:
+      - [1004767, 36455]
+      - [1004856, 35943]
+      - [1005115, 30291]
+      - [1005160, 22577]
+      - [1004249, 21994]
+      - [1004741, 21006]
+      - [1004870, 20820]
+      - [1004833, 20064]
+      - [1002544, 17911]
+      - [5100816, 17807]
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q07
@@ -100,7 +139,40 @@ questions:
       WHERE event_type = 'purchase'
       GROUP BY d
       ORDER BY d
-    gold_value: null
+    gold_value:
+      - ["2019-10-01", 2441]
+      - ["2019-10-02", 2447]
+      - ["2019-10-03", 2659]
+      - ["2019-10-04", 3628]
+      - ["2019-10-05", 3258]
+      - ["2019-10-06", 3052]
+      - ["2019-10-07", 2969]
+      - ["2019-10-08", 3245]
+      - ["2019-10-09", 3314]
+      - ["2019-10-10", 3222]
+      - ["2019-10-11", 3974]
+      - ["2019-10-12", 3853]
+      - ["2019-10-13", 4631]
+      - ["2019-10-14", 4327]
+      - ["2019-10-15", 3887]
+      - ["2019-10-16", 4325]
+      - ["2019-10-17", 4225]
+      - ["2019-10-18", 3957]
+      - ["2019-10-19", 3530]
+      - ["2019-10-20", 3489]
+      - ["2019-10-21", 3569]
+      - ["2019-10-22", 3716]
+      - ["2019-10-23", 3665]
+      - ["2019-10-24", 3570]
+      - ["2019-10-25", 3790]
+      - ["2019-10-26", 3281]
+      - ["2019-10-27", 3303]
+      - ["2019-10-28", 3049]
+      - ["2019-10-29", 2873]
+      - ["2019-10-30", 3030]
+      - ["2019-10-31", 2687]
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q08
@@ -111,8 +183,17 @@ questions:
       FROM events
       GROUP BY dow
       ORDER BY dow
-    gold_value: null
+    gold_value:
+      - ["0", 924059]
+      - ["1", 841972]
+      - ["2", 1023926]
+      - ["3", 1007875]
+      - ["4", 996452]
+      - ["5", 923416]
+      - ["6", 893050]
     note: "%w는 일요일이 0. 응답에서 숫자를 요일명으로 변환해야 한다."
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   # ── 지표 (5) ──────────────────────────────────────
@@ -127,7 +208,9 @@ questions:
         CAST(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN user_session END) AS REAL)
           / NULLIF(COUNT(DISTINCT user_session), 0) AS cvr
       FROM events
-    gold_value: null
+    gold_value: 0.08934582636257223
+    value_type: ratio
+    expect_tool: get_metric
     expect_refusal: false
 
   - id: q10
@@ -150,8 +233,10 @@ questions:
           / NULLIF(COUNT(*), 0) AS cart_to_purchase_rate
       FROM cart c
       LEFT JOIN buy b ON b.user_id = c.user_id AND b.product_id = c.product_id
-    gold_value: null
-    note: 분모를 cart 이벤트 총합(124,252)으로 잡으면 실패. 예상값 37% 수준.
+    gold_value: 0.4826051493013689
+    note: 분모를 cart 이벤트 총합(124,252)으로 잡으면 실패. 예상값 48.26%.
+    value_type: ratio
+    expect_tool: get_metric
     expect_refusal: false
 
   - id: q11
@@ -163,8 +248,10 @@ questions:
         CAST(COUNT(*) AS REAL) / NULLIF(COUNT(DISTINCT user_session), 0) AS views_per_session
       FROM events
       WHERE event_type = 'view'
-    gold_value: null
+    gold_value: 6.820906006793607
     note: 분모는 전체 세션이 아니라 조회가 있는 세션이다.
+    value_type: count
+    expect_tool: get_metric
     expect_refusal: false
 
   - id: q12
@@ -175,7 +262,9 @@ questions:
       SELECT SUM(price) / NULLIF(COUNT(DISTINCT user_id), 0) AS revenue_per_buyer
       FROM events
       WHERE event_type = 'purchase'
-    gold_value: null
+    gold_value: 1149.5283308016294
+    value_type: amount
+    expect_tool: get_metric
     expect_refusal: false
 
   - id: q13
@@ -192,8 +281,10 @@ questions:
         CAST(SUM(CASE WHEN purchase_count >= 2 THEN 1 ELSE 0 END) AS REAL)
           / NULLIF(COUNT(*), 0) AS repeat_purchase_rate
       FROM buyer
-    gold_value: null
+    gold_value: 0.5303113995719119
     note: 관측 기간 31일 제약을 응답에 명시해야 한다.
+    value_type: ratio
+    expect_tool: get_metric
     expect_refusal: false
 
   # ── 세그먼트 비교 (3) ──────────────────────────────
@@ -201,6 +292,7 @@ questions:
   - id: q14
     type: 세그먼트
     question: 브랜드 정보가 있는 상품과 없는 상품의 전환율 차이는?
+    metric: view_to_purchase_rate
     grain: event
     gold_sql: |
       SELECT
@@ -211,15 +303,21 @@ questions:
           / NULLIF(SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END), 0) AS cvr
       FROM events
       GROUP BY seg
-    gold_value: null
+      ORDER BY seg
+    gold_value:
+      - ["brand_missing", 1057644, 10197, 0.009641240341740699]
+      - ["brand_present", 5321888, 96769, 0.0181832086657968]
     note: >-
       brand는 상품 속성이므로 세션 단위로 계산할 수 없다. 이벤트 단위 값이며
       metrics.yaml의 세션 기준 전환율과 다른 수치임을 명시해야 한다.
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q15
     type: 세그먼트
     question: 주중과 주말의 전환율 차이는?
+    metric: purchase_conversion_rate
     grain: session
     gold_sql: |
       WITH s AS (
@@ -236,34 +334,60 @@ questions:
         CAST(SUM(bought) AS REAL) / NULLIF(COUNT(*), 0) AS cvr
       FROM s
       GROUP BY seg
-    gold_value: null
+      ORDER BY seg
+    gold_value:
+      - ["weekday", 687534, 61157, 0.08895123732062706]
+      - ["weekend", 247921, 22422, 0.09044009987052327]
     note: 세션의 첫 이벤트 시각으로 요일을 판정한다. 자정을 넘긴 세션은 시작일 기준.
+    rubric:
+      - 주중과 주말 전환율을 실제로 계산했는가
+      - 차이가 작다는 점을 명시했는가
+      - 작은 차이를 유의미한 패턴으로 해석하지 않았는가
+    value_type: table
+    expect_tool: run_query
     expect_refusal: false
 
   - id: q16
     type: 세그먼트
-    question: 가격대별 전환율 차이는?
+    question: 상위 5개 카테고리의 구매 전환율 비교는?
+    metric: view_to_purchase_rate
     grain: event
     gold_sql: |
-      -- 밴드 경계는 purchase price 사분위수 확인 후 확정 (BAND1~BAND3 치환)
+      WITH top5 AS (
+        SELECT category_code
+        FROM events
+        WHERE event_type = 'view'
+          AND category_code IS NOT NULL AND category_code <> ''
+        GROUP BY category_code
+        ORDER BY COUNT(*) DESC, category_code
+        LIMIT 5
+      )
       SELECT
-        CASE
-          WHEN price <  BAND1 THEN 'Q1'
-          WHEN price <  BAND2 THEN 'Q2'
-          WHEN price <  BAND3 THEN 'Q3'
-          ELSE 'Q4'
-        END AS band,
-        SUM(CASE WHEN event_type = 'view'     THEN 1 ELSE 0 END) AS views,
-        SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) AS purchases,
-        CAST(SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) AS REAL)
-          / NULLIF(SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END), 0) AS cvr
-      FROM events
-      WHERE price IS NOT NULL AND price > 0
-      GROUP BY band
-      ORDER BY band
-    gold_value: null
-    status: 미확정
-    note: price 분포 확인 후 밴드 경계를 채운다. 통화 단위 불명이므로 절대 금액 기준은 쓰지 않는다.
+        e.category_code,
+        SUM(CASE WHEN e.event_type = 'view'     THEN 1 ELSE 0 END) AS views,
+        SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) AS purchases,
+        CAST(SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) AS REAL)
+          / NULLIF(SUM(CASE WHEN e.event_type = 'view' THEN 1 ELSE 0 END), 0) AS cvr
+      FROM events e
+      JOIN top5 t ON t.category_code = e.category_code
+      GROUP BY e.category_code
+      ORDER BY views DESC, e.category_code
+    gold_value:
+      - ["electronics.smartphone", 1419689, 44600, 0.03141533110420663]
+      - ["electronics.clocks", 217807, 2925, 0.013429320453428954]
+      - ["computers.notebook", 205074, 2672, 0.013029443030320761]
+      - ["electronics.video.tv", 159585, 3187, 0.019970548610458376]
+      - ["apparel.shoes", 144224, 1002, 0.006947526070556912]
+    value_type: table
+    expect_tool: run_query
+    note: >-
+      상위 5개는 조회 수 기준이다. 구매 건수로 상위를 뽑으면 전환율이 높은 카테고리가
+      먼저 뽑혀 비교 대상 선정 자체가 편향된다.
+      상위 5개 선정과 집계 모두에서 category_code 결측 32.57%를 제외한다.
+      결측 category_code는 해당 category_id의 모든 행에서 비어 있어 데이터 내부로
+      이름 복구가 불가능하고, 하나의 카테고리로 묶으면 서로 다른 카테고리가 섞이기 때문이다.
+      응답에 제외 사실을 명시해야 한다.
+    fail_if: 카테고리별 조회 수가 아닌 전체 조회 수를 분모로 사용하는 경우
     expect_refusal: false
 
   # ── 원인분해 (2) · 루브릭 채점 ──────────────────────
@@ -283,19 +407,32 @@ questions:
       - 카테고리 분해 시 category_code 결측 32.6%를 언급했는가
       - 표본이 작은 카테고리를 근거로 결론 내리지 않았는가
       - 원인 특정에는 데이터 밖 정보가 필요함을 명시했는가
+      - 단일 월 데이터라 전월 대비·월 단위 코호트 비교가 불가능함을 명시했는가
+      - 외부 벤치마크가 없어 절대 수준의 좋고 나쁨은 판단할 수 없음을 명시했는가
     expect_refusal: false
 
   - id: q18
     type: 원인분해
-    question: 전환율이 가장 낮은 카테고리는 어디이고, 조회 단계와 장바구니 단계 중 어디서 이탈이 큰가?
+    question: >-
+      오후 시간대(14~17시)는 조회 수가 가장 많지만 구매 전환율은 가장 낮다.
+      데이터에서 확인 가능한 요인은 무엇인가?
     gold_sql: null
+    reference_sql: 시간대별 조회/구매/전환율 집계 쿼리
     rubric:
-      - 카테고리별 전환율을 계산했는가
-      - "구매의 약 50%가 장바구니를 거치지 않는다는 점을 확인하고 언급했는가 (핵심)"
-      - view → cart → purchase 순차 퍼널 전제를 그대로 적용하지 않았는가
-      - "구매 ÷ 장바구니 = 86% 형태의 계산을 하지 않았는가"
-      - category_code 결측 32.6%를 언급했는가
-      - 원인 특정에는 데이터 밖 정보가 필요함을 명시했는가
+      - 시간대별 조회·구매·전환율을 실제로 계산했는가
+      - 조회 수 증가가 구매로 이어지지 않는다는 사실을 정확히 서술했는가
+      - 세션당 조회 수 등 다른 축으로 분해를 시도했는가
+      - 데이터로 확인 불가한 요인을 단정하지 않았는가
+    must_mention: [조회 수, 전환율]
+    note: >-
+      기존 q18(전환율 최저 카테고리 + 조회/장바구니 이탈 지점)을 교체했다. 사유 둘.
+      (1) category_code 결측이 event_type별로 24~33%라 원인 분해가 카테고리 자체가 아니라
+      데이터 품질 문제로 흐른다.
+      (2) '이탈 지점' 표현이 metrics.yaml not_defined의 funnel_step_dropoff와 충돌한다.
+      순차 퍼널 전제가 성립하지 않는다고 정의해 둔 것을 문항이 다시 요구하는 셈이었다.
+      별도 확인 사항: event_time의 타임존 기준이 원본 CSV·문서 어디에도 명시돼 있지 않다.
+      '오후 14~17시'가 어느 지역 기준인지 확정되지 않았으므로, 시간대 해석을 단정하는
+      응답은 감점 대상이 아니라 확인 불가로 처리해야 한다.
     expect_refusal: false
 
   # ── 답할 수 없음 (2) ──────────────────────────────
@@ -311,7 +448,6 @@ questions:
   - id: q20
     type: 답할수없음
     question: 카테고리가 미분류된 상품들의 실제 카테고리별 매출 비중은?
-    expected: refusal
     gold_sql: null
     expect_refusal: true
     refusal_reason: >-

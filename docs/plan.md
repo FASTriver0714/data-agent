@@ -64,4 +64,4 @@ CREATE INDEX idx_session ON events(user_session);
 ### 다음
 
 - [ ] 정답셋 20문항 작성
-- [ ] 1단계: `metrics.yaml` 지표 정의 (5개)
+- [ ] 1단계: `metrics.yaml` 지표 정의 (6개)
