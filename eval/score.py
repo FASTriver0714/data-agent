@@ -356,7 +356,7 @@ def main(argv=None):
 
 
 def _selfcheck():
-    tol = {"count": 0, "ratio": 0.001, "amount": 0.001}
+    tol = {"count": 0, "ratio": 0.001, "amount": 0.001, "mean": 0.001}
     table_rules = {
         "row_count": "exact",
         "key_columns": "exact",
@@ -377,6 +377,12 @@ def _selfcheck():
     # 금액 — 반올림 응답 허용, 자릿수 오류는 불허
     assert compare_scalar(1149.5283308016294, 1149.53, "amount", tol)[0]
     assert not compare_scalar(1149.5283308016294, 11495.28, "amount", tol)[0]
+
+    # 평균 — 건수가 아니므로 반올림 응답을 허용한다 (q11 views_per_session)
+    assert compare_scalar(6.820906006793607, 6.821, "mean", tol)[0]
+    assert not compare_scalar(6.820906006793607, 6.9, "mean", tol)[0]
+    # 같은 값이라도 count로 지정하면 완전 일치라 떨어진다 — q11이 실패했던 원인
+    assert not compare_scalar(6.820906006793607, 6.821, "count", tol)[0]
 
     # 값 없음
     assert not compare_scalar(1.0, None, "amount", tol)[0]

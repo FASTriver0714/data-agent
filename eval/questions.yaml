@@ -8,10 +8,11 @@ scoring:
     count: 0
     ratio: 0.001
     amount: 0.001
+    mean: 0.001
   table:
     row_count: exact
     key_columns: exact
-    numeric_columns: {integer: 0, float: 0.001}
+    numeric_columns: { integer: 0, float: 0.001 }
     order_sensitive: true
   table_compare: 컬럼명은 채점 대상이 아니다.
   refusal_scoring: >-
@@ -250,7 +251,7 @@ questions:
       WHERE event_type = 'view'
     gold_value: 6.820906006793607
     note: 분모는 전체 세션이 아니라 조회가 있는 세션이다.
-    value_type: count
+    value_type: mean
     expect_tool: get_metric
     expect_refusal: false
 
